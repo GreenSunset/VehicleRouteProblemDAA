@@ -153,25 +153,25 @@ namespace VehicleRouteProblem
                 switch (searchMethod)
                 {
                     case "reinsertion":
-                        localEnvironment = new ReinsertionFullEnvironment(solution);
+                        localEnvironment = new ReinsertionFullEnvironment(solution, anxious);
                         break;
                     case "intra reinsertion":
-                        localEnvironment = new ReinsertionIntraEnvironment(solution);
+                        localEnvironment = new ReinsertionIntraEnvironment(solution, anxious);
                         break;
                     case "inter reinsertion":
-                        localEnvironment = new ReinsertionInterEnvironment(solution);
+                        localEnvironment = new ReinsertionInterEnvironment(solution, anxious);
                         break;
                     case "exchange":
-                        localEnvironment = new ExchangeFullEnvironment(solution);
+                        localEnvironment = new ExchangeFullEnvironment(solution, anxious);
                         break;
                     case "intra exchange":
-                        localEnvironment = new ExchangeIntraEnvironment(solution);
+                        localEnvironment = new ExchangeIntraEnvironment(solution, anxious);
                         break;
                     case "inter exchange":
-                        localEnvironment = new ExchangeInterEnvironment(solution);
+                        localEnvironment = new ExchangeInterEnvironment(solution, anxious);
                         break;
                     case "2-opt":
-                        localEnvironment = new TwoOptEnvironment(solution);
+                        localEnvironment = new TwoOptEnvironment(solution, anxious);
                         break;
                     default:
                         throw new ArgumentException("An error ocurred");

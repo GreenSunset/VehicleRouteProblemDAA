@@ -184,7 +184,7 @@ namespace VehicleRouteProblem
                         bestLocalSolution = i;
                     }
                 }
-                PartialSolution debug = new(solution);
+                /*PartialSolution debug = new(solution);
                 localEnvironment.transformation[bestLocalSolution].Transform(debug);
                 if (debug.totalCost() - solution.totalCost() != bestVariance) Console.WriteLine("ERROR in " + searchMethod);
                 /*Console.WriteLine("Previous: " + solution.totalCost());

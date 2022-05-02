@@ -12,12 +12,41 @@ namespace VehicleRouteProblem
         public int RCL_SIZE = 10;
         private string searchMethod;
         private bool anxious;
+        private bool randomConstructive;
+        private SolutionEnvironment[] searchEnvironments;
 
-        public GRASPAlgorithm(string searchMethod = "reinsertion", bool anxiousSearch = false)
+        public GRASPAlgorithm(string searchMethod = "reinsertion", bool anxiousSearch = false, bool randomConstructivePhase = true)
         {
-            if (searchMethod != "reinsertion" && searchMethod != "intra reinsertion" && searchMethod != "inter reinsertion" &&
-                searchMethod != "exchange" &&  searchMethod != "intra exchange" && searchMethod != "inter exchange" && searchMethod != "2-opt")
-                throw new ArgumentException("Loacal search method not recognized");
+            switch (searchMethod)
+            {
+                case "reinsertion":
+                    searchEnvironments = new ReinsertionEnvironment[] { new("full") };
+                    break;
+                case "intra reinsertion":
+                    searchEnvironments = new ReinsertionEnvironment[] { new("intra") };
+                    break;
+                case "inter reinsertion":
+                    searchEnvironments = new ReinsertionEnvironment[] { new("inter") };
+                    break;
+                case "exchange":
+                    searchEnvironments = new ExchangeEnvironment[] { new("full") };
+                    break;
+                case "intra exchange":
+                    searchEnvironments = new ExchangeEnvironment[] { new("intra") };
+                    break;
+                case "inter exchange":
+                    searchEnvironments = new ExchangeEnvironment[] { new("inter") };
+                    break;
+                case "2-opt":
+                    searchEnvironments = new TwoOptEnvironment[] { new() };
+                    break;
+                case "gvns":
+                    searchEnvironments = new SolutionEnvironment[] { new ReinsertionEnvironment("intra"), new ReinsertionEnvironment("inter"), new ExchangeEnvironment("intra"), new ExchangeEnvironment("inter"), new TwoOptEnvironment() };
+                    break;
+                default:
+                    throw new ArgumentException("Loacal search method not recognized");
+            }
+            randomConstructive = randomConstructivePhase;
             this.searchMethod = searchMethod;
             anxious = anxiousSearch;
         }
@@ -36,7 +65,8 @@ namespace VehicleRouteProblem
             {
                 PartialSolution currentSolution = new(problem);
                 BuildSolution(currentSolution, RestrictedCandidateList);
-                PostProcessing(currentSolution);
+                if (searchMethod == "gvns") GVNS(ref currentSolution);
+                else SimpleSearch(currentSolution);
                 UpdateBestSolution(currentSolution, ref bestSolution);
                 count++;
             } while (count < 2000);
@@ -93,7 +123,7 @@ namespace VehicleRouteProblem
                 bestNext[i, 1] = int.MaxValue;
                 bestNext[i, 2] = 0;
             }
-            Random random = new Random();
+            Random random = new();
             List<int> RCL = new List<int>(RestrictedCandidateList);
             for (int i = 0; i < routes.Length && RCL.Count > 0; i++)
             {
@@ -103,11 +133,11 @@ namespace VehicleRouteProblem
                 RCL.Remove(node);
                 ++bestNext[i, 2];
             }
-            while(available.Count > 0)
+            while (available.Count > 0)
             {
                 for (int i = 0; i < bestNext.GetLength(0); i++)
                 {
-                    if (bestNext[i,1] == int.MaxValue && bestNext[i, 2] < clientLimit)
+                    if (bestNext[i, 1] == int.MaxValue && bestNext[i, 2] < clientLimit)
                     {
                         bestNext[i, 0] = available[0];
                         bestNext[i, 1] = problem.getDistance(routes[i][routes[i].Count - 1], bestNext[i, 0]);
@@ -123,8 +153,16 @@ namespace VehicleRouteProblem
                     }
                 }
                 int grows = 0;
-                for (int i = 1; i < bestNext.GetLength(0); i++)
-                    if (bestNext[grows, 1] > bestNext[i, 1]) grows = i;
+                if (randomConstructive)
+                {
+                    do grows = random.Next(0, routes.Length);
+                    while (bestNext[grows, 1] == int.MaxValue);
+                }
+                else
+                {
+                    for (int i = 1; i < bestNext.GetLength(0); i++)
+                        if (bestNext[grows, 1] > bestNext[i, 1]) grows = i;
+                }
                 int explored = bestNext[grows, 0];
                 ++bestNext[grows, 2];
                 routes[grows].Add(explored);
@@ -136,65 +174,55 @@ namespace VehicleRouteProblem
         }
 
         /// <summary>
-        /// Fase de exploración local del GRASP
+        /// Fase de exploración del GRASP (exploración local Simple)
         /// </summary>
         /// <param name="solution">Solución Parcial</param>
-        private void PostProcessing(PartialSolution solution)
+        private bool SimpleSearch(PartialSolution solution, int environment = 0)
         {
-            int bestVariance;
-            int bestLocalSolution;
-            int maxRepeats = 100;
-            int repeats = 0;
-            SolutionEnvironment localEnvironment;
+            int count = 0;
             do
             {
-                bestVariance = 0;
-                bestLocalSolution = 0;
-                switch (searchMethod)
-                {
-                    case "reinsertion":
-                        localEnvironment = new ReinsertionFullEnvironment(solution, anxious);
-                        break;
-                    case "intra reinsertion":
-                        localEnvironment = new ReinsertionIntraEnvironment(solution, anxious);
-                        break;
-                    case "inter reinsertion":
-                        localEnvironment = new ReinsertionInterEnvironment(solution, anxious);
-                        break;
-                    case "exchange":
-                        localEnvironment = new ExchangeFullEnvironment(solution, anxious);
-                        break;
-                    case "intra exchange":
-                        localEnvironment = new ExchangeIntraEnvironment(solution, anxious);
-                        break;
-                    case "inter exchange":
-                        localEnvironment = new ExchangeInterEnvironment(solution, anxious);
-                        break;
-                    case "2-opt":
-                        localEnvironment = new TwoOptEnvironment(solution, anxious);
-                        break;
-                    default:
-                        throw new ArgumentException("An error ocurred");
-                }
-                for (int i = 0; i < localEnvironment.variance.Count; ++i)
-                {
-                    if (localEnvironment.variance[i] < bestVariance)
-                    {
-                        bestVariance = localEnvironment.variance[i];
-                        bestLocalSolution = i;
-                    }
-                }
-                /*PartialSolution debug = new(solution);
-                localEnvironment.transformation[bestLocalSolution].Transform(debug);
-                if (debug.totalCost() - solution.totalCost() != bestVariance) Console.WriteLine("ERROR in " + searchMethod);
-                /*Console.WriteLine("Previous: " + solution.totalCost());
-                Console.WriteLine("Next: " + debug.totalCost());
-                Console.WriteLine("Difference: " + bestVariance);/**/
-            } while (++repeats < maxRepeats && localEnvironment.transformation[bestLocalSolution].Transform(solution));
+                searchEnvironments[environment].Build(solution, anxious);
+                count++;
+            } while (searchEnvironments[environment].transformation[searchEnvironments[environment].best].Transform(solution));
+            return count > 1;
         }
 
         /// <summary>
-        /// Comparación de la calidad de la solución (no implementada)
+        /// Fase de exploración del GRASP mediante General Variable Neighborhood Search
+        /// </summary>
+        /// <param name="solution">Solución Parcial</param>
+        private void GVNS(ref PartialSolution solution)
+        {
+            bool upgraded;
+            Random random = new();
+            do
+            {
+                upgraded = false;
+                for (int i = 0; i < searchEnvironments.Length; i++)
+                {
+                    searchEnvironments[i].Build(solution, false, false);
+                    PartialSolution randomStart = new(solution);
+
+                    if (searchEnvironments[i].variance.Count > 1 && searchEnvironments[i].transformation[random.Next(1, searchEnvironments[i].variance.Count)].Transform(randomStart))
+                    {
+                        for (int j = 0; j < searchEnvironments.Length; j++)
+                        {
+                            if (SimpleSearch(randomStart, j)) j = -1;
+                        }
+                        if (solution.totalCost() > randomStart.totalCost())
+                        {
+                            solution = randomStart;
+                            i = -1;
+                            upgraded = true;
+                        }
+                    }
+                }
+            } while (upgraded);
+        }
+
+        /// <summary>
+        /// Comparación de la calidad de la solución
         /// </summary>
         /// <param name="candidate">Solución candidata</param>
         /// <param name="lastBest">Mejor solución hasta el momento</param>
@@ -245,7 +273,7 @@ namespace VehicleRouteProblem
             routes = new List<int>[0];
             available = new List<int>() { 0 };
         }
-        
+
         /// <summary>
         /// Constructor. Prepara una solución parcial vacía a partir de un problema
         /// </summary>
@@ -266,7 +294,9 @@ namespace VehicleRouteProblem
         /// <exception cref="Exception">No se puede construir una solución incompleta</exception>
         public Solution turnToSolution()
         {
-            if (available.Count > 0) throw new Exception("Can't build a non-valid solution");
+            int count = 0;
+            for (int i = 0; i < routes.Length; i++) count += routes[i].Count - 2;
+            if (available.Count > 0 || count != problem.clientCount()) throw new Exception("Can't build a non-valid solution");
             int[] costs = new int[routes.Length];
             for (int i = 0; i < routes.Length; i++) costs[i] = problem.getRouteCost(routes[i]);
             return new Solution(routes, costs);

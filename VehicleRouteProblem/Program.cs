@@ -59,7 +59,7 @@ namespace VehicleRouteProblem
                 new HalfRoutesGreedyAlgorithm(),
                 new ConstructiveGreedyAlgorithm(),
             };
-            string[][,] greedyData = new string[][,]{ new string[problems.Length, 3], new string[problems.Length, 3] };
+            string[][,] greedyData = new string[][,] { new string[problems.Length, 3], new string[problems.Length, 3] };
             string[] greedyColumns = new string[] { "Size", "Solution Cost", "Solution Time" };
             for (int i = 0; i < greedyAlgorithms.Length; i++)
                 for (int j = 0; j < problems.Length; j++)
@@ -72,8 +72,8 @@ namespace VehicleRouteProblem
                     greedyData[i][j, 2] = $"{timer.ElapsedMilliseconds} ms";
                 }
             Console.WriteLine("\n  GREEDY ALGORITHMS: ");
-            Console.WriteLine("\n\nConstructive Greedy: \n" + PrintTable(greedyData[0], files, greedyColumns));
-            Console.WriteLine("\n\nHalfRoutes Greedy: \n" + PrintTable(greedyData[1], files, greedyColumns));
+            Console.WriteLine("\n\nHalfRoutes Greedy: \n" + PrintTable(greedyData[0], files, greedyColumns));
+            Console.WriteLine("\n\nConstructive Greedy: \n" + PrintTable(greedyData[1], files, greedyColumns));
 
             GRASPAlgorithm[] GRASPAlgorithms = new GRASPAlgorithm[] {
                 new GRASPAlgorithm("reinsertion"),
@@ -83,6 +83,7 @@ namespace VehicleRouteProblem
                 new GRASPAlgorithm("intra exchange"),
                 new GRASPAlgorithm("inter exchange"),
                 new GRASPAlgorithm("2-opt"),
+                new GRASPAlgorithm("gvns"),
             };
             string[][,] GRASPData = new string[GRASPAlgorithms.Length][,];
             for (int i = 0; i < GRASPData.Length; i++) GRASPData[i] = new string[problems.Length, 4];
@@ -106,6 +107,7 @@ namespace VehicleRouteProblem
             Console.WriteLine("\n\nGRASP (intra exchange): \n" + PrintTable(GRASPData[4], files, GRASPColumns));
             Console.WriteLine("\n\nGRASP (inter exchange): \n" + PrintTable(GRASPData[5], files, GRASPColumns));
             Console.WriteLine("\n\nGRASP (2-opt): \n" + PrintTable(GRASPData[6], files, GRASPColumns));
+            Console.WriteLine("\n\nGRASP (gvns): \n" + PrintTable(GRASPData[7], files, GRASPColumns));
         }
     }
 }

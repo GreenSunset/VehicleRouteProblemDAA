@@ -16,181 +16,143 @@ namespace VehicleRouteProblem
         /// </summary>
         public List<SolutionTransformation> transformation { get; }
 
+        /// <summary>
+        /// Index of the best variant
+        /// </summary>
+        public int best { get; }
+
+        /// <summary>
+        /// Generates an environment in base of a solution
+        /// </summary>
+        /// <param name="solution">Solution</param>
+        /// <param name="anxious">If true, generates only one better solution</param>
+        /// <param name="onlyBest">Whether or not to skip non improvements</param>
+        public void Build(PartialSolution solution, bool anxious = false, bool onlyBest = true);
+
     }
 
     /// <summary>
     /// Represents a reinsertion local environment
     /// </summary>
-    internal class ReinsertionFullEnvironment : SolutionEnvironment
+    internal class ReinsertionEnvironment : SolutionEnvironment
     {
         /// <summary>
         /// Difference in cost from the original solution
         /// </summary>
-        public List<int> variance { get; }
+        public List<int> variance { get; private set; }
         /// <summary>
         /// Transformation needed to change solution
         /// </summary>
-        public List<SolutionTransformation> transformation { get; }
+        public List<SolutionTransformation> transformation { get; private set; }
+        /// <summary>
+        /// Index of the best variant
+        /// </summary>
+        public int best { get; private set; }
+        /// <summary>
+        /// Type of environment (intra, inter, full)
+        /// </summary>
+        private string type;
+
+        /// <summary>
+        /// Sets up an environment
+        /// </summary>
+        /// <param name="type">Tipe of reinsert (intra, inter, full)</param>
+        public ReinsertionEnvironment(string type = "full")
+        {
+            if (type != "full" && type != "intra" && type != "inter")
+                throw new ArgumentException("Invalid type");
+            variance = new List<int>() { 0 };
+            transformation = new List<SolutionTransformation>() { new NoTransformation() };
+            this.type = type;
+            best = 0;
+        }
 
         /// <summary>
         /// Generates an environment in base of a solution
         /// </summary>
         /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public ReinsertionFullEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="anxious">If true, generates only one better solution</param>
+        /// <param name="onlyBest">Whether or not to skip non improvements</param>
+        public void Build(PartialSolution solution, bool anxious, bool onlyBest)
         {
             Problem problem = solution.problem;
             List<int>[] routes = solution.routes;
             int clientLimit = (int)(problem.clientCount() * 0.1) + problem.clientCount() / routes.Length - 2;
             variance = new List<int>() { 0 };
             transformation = new List<SolutionTransformation>() { new NoTransformation() };
-            for (int originRoute = 0; originRoute < routes.Length && (!anxious || variance.Count < 1); originRoute++)
+            best = 0;
+            for (int Route = 0; Route < routes.Length && (!anxious || variance.Count < 1); Route++)
             {
-                for (int originIndex = 1; originIndex < routes[originRoute].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
+                for (int originIndex = 1; originIndex < routes[Route].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
                 {
-                    for (int destinationIndex = 1; destinationIndex < routes[originRoute].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
-                    {
-                        if (destinationIndex == originIndex - 2 || destinationIndex == originIndex - 1 || destinationIndex == originIndex) continue;
-                        int cost = 
-                            problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex + 1]) -
-                            (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                            problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]));
-                        if (destinationIndex < originIndex) cost +=
-                                problem.getDistance(routes[originRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][destinationIndex]) -
-                                problem.getDistance(routes[originRoute][destinationIndex - 1], routes[originRoute][destinationIndex]);
-                        else cost += 
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[originRoute][destinationIndex], routes[originRoute][originIndex]) -
-                                problem.getDistance(routes[originRoute][destinationIndex], routes[originRoute][destinationIndex + 1]);
-                        if (skipPositives && cost >= 0) continue;
-                        variance.Add(cost);
-                        transformation.Add(new ReinsertionTransformation(originIndex, originRoute, destinationIndex));
-                    }
-                    for (int destinationRoute = 0; destinationRoute < routes.Length && (!anxious || variance.Count < 1); destinationRoute++)
-                    {
-                        if (destinationRoute == originRoute || routes[destinationRoute].Count >= clientLimit) continue;
-                        for (int destinationIndex = 1; destinationIndex < routes[destinationRoute].Count && (!anxious || variance.Count < 1); destinationIndex++)
-                        {
-                            int cost =
-                                problem.getDistance(routes[originRoute][originIndex], routes[destinationRoute][destinationIndex]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex + 1]) -
-                                (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[destinationRoute][destinationIndex]));
-                            if (skipPositives && cost >= 0) continue;
-                            variance.Add(cost); 
-                            transformation.Add(new ReinsertionTransformation(originIndex, originRoute, destinationIndex, destinationRoute));
-                        }
-                    }
+                    if (type == "full" || type == "intra") IntraRoute(anxious, onlyBest, problem, routes, Route, originIndex);
+                    if (type == "full" || type == "inter") InterRoute(anxious, onlyBest, problem, routes, clientLimit, Route, originIndex);
                 }
             }
         }
-    }
-
-    /// <summary>
-    /// Represents an inter route reinsertion local environment
-    /// </summary>
-    internal class ReinsertionInterEnvironment : SolutionEnvironment
-    {
-        /// <summary>
-        /// Difference in cost from the original solution
-        /// </summary>
-        public List<int> variance { get; }
-        /// <summary>
-        /// Transformation needed to change solution
-        /// </summary>
-        public List<SolutionTransformation> transformation { get; }
 
         /// <summary>
-        /// Generates an environment in base of a solution
+        /// Adds interroute variants
         /// </summary>
-        /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public ReinsertionInterEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="anxious"></param>
+        /// <param name="onlyBest"></param>
+        /// <param name="problem"></param>
+        /// <param name="routes"></param>
+        /// <param name="clientLimit"></param>
+        /// <param name="originRoute"></param>
+        /// <param name="originIndex"></param>
+        private void InterRoute(bool anxious, bool onlyBest, Problem problem, List<int>[] routes, int clientLimit, int originRoute, int originIndex)
         {
-            Problem problem = solution.problem;
-            List<int>[] routes = solution.routes;
-            int clientLimit = (int)(problem.clientCount() * 0.1) + problem.clientCount() / routes.Length - 2;
-            variance = new List<int>() { 0 };
-            transformation = new List<SolutionTransformation>() { new NoTransformation() };
-            for (int originRoute = 0; originRoute < routes.Length && (!anxious || variance.Count < 1); originRoute++)
+            for (int destinationRoute = 0; destinationRoute < routes.Length && (!anxious || variance.Count < 1); destinationRoute++)
             {
-                for (int originIndex = 1; originIndex < routes[originRoute].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
+                if (destinationRoute == originRoute || routes[destinationRoute].Count >= clientLimit) continue;
+                for (int destinationIndex = 1; destinationIndex < routes[destinationRoute].Count && (!anxious || variance.Count < 1); destinationIndex++)
                 {
-                    for (int destinationRoute = 0; destinationRoute < routes.Length && (!anxious || variance.Count < 1); destinationRoute++)
-                    {
-                        if (destinationRoute == originRoute || routes[destinationRoute].Count >= clientLimit) continue;
-                        for (int destinationIndex = 1; destinationIndex < routes[destinationRoute].Count && (!anxious || variance.Count < 1); destinationIndex++)
-                        {
-                            int cost =
-                                problem.getDistance(routes[originRoute][originIndex], routes[destinationRoute][destinationIndex]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex + 1]) -
-                                (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[destinationRoute][destinationIndex]));
-                            if (skipPositives && cost >= 0) continue;
-                            variance.Add(cost);
-                            transformation.Add(new ReinsertionTransformation(originIndex, originRoute, destinationIndex, destinationRoute));
-                        }
-                    }
+                    int cost =
+                        problem.getDistance(routes[originRoute][originIndex], routes[destinationRoute][destinationIndex]) +
+                        problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
+                        problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex + 1]) -
+                        (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
+                        problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
+                        problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[destinationRoute][destinationIndex]));
+                    if ((anxious || onlyBest) && cost >= 0) continue;
+                    if (variance[best] > cost) best = variance.Count;
+                    variance.Add(cost);
+                    transformation.Add(new ReinsertionTransformation(originIndex, originRoute, destinationIndex, destinationRoute));
                 }
             }
         }
-    }
-
-    /// <summary>
-    /// Represents am intra route reinsertion local environment
-    /// </summary>
-    internal class ReinsertionIntraEnvironment : SolutionEnvironment
-    {
-        /// <summary>
-        /// Difference in cost from the original solution
-        /// </summary>
-        public List<int> variance { get; }
-        /// <summary>
-        /// Transformation needed to change solution
-        /// </summary>
-        public List<SolutionTransformation> transformation { get; }
 
         /// <summary>
-        /// Generates an environment in base of a solution
+        /// Adds intraroute variants
         /// </summary>
-        /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public ReinsertionIntraEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="anxious"></param>
+        /// <param name="onlyBest"></param>
+        /// <param name="problem"></param>
+        /// <param name="routes"></param>
+        /// <param name="route"></param>
+        /// <param name="originIndex"></param>
+        private void IntraRoute(bool anxious, bool onlyBest, Problem problem, List<int>[] routes, int route, int originIndex)
         {
-            Problem problem = solution.problem;
-            List<int>[] routes = solution.routes;
-            int clientLimit = (int)(problem.clientCount() * 0.1) + problem.clientCount() / routes.Length - 2;
-            variance = new List<int>() { 0 };
-            transformation = new List<SolutionTransformation>() { new NoTransformation() };
-            for (int route = 0; route < routes.Length && (!anxious || variance.Count < 1); route++)
+            for (int destinationIndex = 1; destinationIndex < routes[route].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
             {
-                for (int originIndex = 1; originIndex < routes[route].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
-                {
-                    for (int destinationIndex = 1; destinationIndex < routes[route].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
-                    {
-                        if (destinationIndex == originIndex - 2 || destinationIndex == originIndex - 1 || destinationIndex == originIndex) continue;
-                        int cost =
-                            problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex + 1]) -
-                            (problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex]) +
-                            problem.getDistance(routes[route][originIndex], routes[route][originIndex + 1]));
-                        if (destinationIndex < originIndex) cost +=
-                                problem.getDistance(routes[route][destinationIndex - 1], routes[route][originIndex]) +
-                                problem.getDistance(routes[route][originIndex], routes[route][destinationIndex]) -
-                                problem.getDistance(routes[route][destinationIndex - 1], routes[route][destinationIndex]);
-                        else cost +=
-                                problem.getDistance(routes[route][originIndex], routes[route][destinationIndex + 1]) +
-                                problem.getDistance(routes[route][destinationIndex], routes[route][originIndex]) -
-                                problem.getDistance(routes[route][destinationIndex], routes[route][destinationIndex + 1]);
-                        if (skipPositives && cost >= 0) continue;
-                        variance.Add(cost);
-                        transformation.Add(new ReinsertionTransformation(originIndex, route, destinationIndex));
-                    }
-                }
+                if (destinationIndex == originIndex - 2 || destinationIndex == originIndex - 1 || destinationIndex == originIndex) continue;
+                int cost =
+                    problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex + 1]) -
+                    (problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex]) +
+                    problem.getDistance(routes[route][originIndex], routes[route][originIndex + 1]));
+                if (destinationIndex < originIndex) cost +=
+                        problem.getDistance(routes[route][destinationIndex - 1], routes[route][originIndex]) +
+                        problem.getDistance(routes[route][originIndex], routes[route][destinationIndex]) -
+                        problem.getDistance(routes[route][destinationIndex - 1], routes[route][destinationIndex]);
+                else cost +=
+                        problem.getDistance(routes[route][originIndex], routes[route][destinationIndex + 1]) +
+                        problem.getDistance(routes[route][destinationIndex], routes[route][originIndex]) -
+                        problem.getDistance(routes[route][destinationIndex], routes[route][destinationIndex + 1]);
+                if ((anxious || onlyBest) && cost >= 0) continue;
+                if (variance[best] > cost) best = variance.Count;
+                variance.Add(cost);
+                transformation.Add(new ReinsertionTransformation(originIndex, route, destinationIndex));
             }
         }
     }
@@ -198,193 +160,134 @@ namespace VehicleRouteProblem
     /// <summary>
     /// Represents an Exchange local environment
     /// </summary>
-    internal class ExchangeFullEnvironment : SolutionEnvironment
+    internal class ExchangeEnvironment : SolutionEnvironment
     {
         /// <summary>
         /// Difference in cost from the original solution
         /// </summary>
-        public List<int> variance { get; }
+        public List<int> variance { get; private set; }
         /// <summary>
         /// Transformation needed to change solution
         /// </summary>
-        public List<SolutionTransformation> transformation { get; }
+        public List<SolutionTransformation> transformation { get; private set; }
+        /// <summary>
+        /// Index of the best variant
+        /// </summary>
+        public int best { get; private set; }
+        /// <summary>
+        /// Type of environment (intra, inter, full)
+        /// </summary>
+        private string type;
 
         /// <summary>
-        /// Generates an environment in base of a solution
+        /// Sets up an environment
         /// </summary>
-        /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public ExchangeFullEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="type">Tipe of exchange (intra, inter, full)</param>
+        public ExchangeEnvironment(string type = "full")
         {
-            Problem problem = solution.problem;
-            List<int>[] routes = solution.routes;
+            if (type != "full" && type != "intra" && type != "inter")
+                throw new ArgumentException("Invalid type");
             variance = new List<int>() { 0 };
             transformation = new List<SolutionTransformation>() { new NoTransformation() };
-            for (int originRoute = 0; originRoute < routes.Length && (!anxious || variance.Count < 1); originRoute++)
-            {
-                for (int originIndex = 1; originIndex < routes[originRoute].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
-                {
-                    for (int destinationIndex = originIndex + 1; destinationIndex < routes[originRoute].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
-                    {
-                        int cost;
-                        if (destinationIndex == originIndex + 1)
-                        {
-                            cost = problem.getDistance(routes[originRoute][originIndex], routes[originRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][destinationIndex]) +
-                                problem.getDistance(routes[originRoute][destinationIndex], routes[originRoute][originIndex]) -
-                                (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][destinationIndex]) +
-                                problem.getDistance(routes[originRoute][destinationIndex], routes[originRoute][destinationIndex + 1]));
-                        }
-                        else
-                        {
-                            cost =
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[originRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][destinationIndex]) +
-                                problem.getDistance(routes[originRoute][destinationIndex], routes[originRoute][originIndex + 1]) -
-                                (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
-                                problem.getDistance(routes[originRoute][destinationIndex], routes[originRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[originRoute][destinationIndex - 1], routes[originRoute][destinationIndex]));
-                        }
-                        if (skipPositives && cost >= 0) continue;
-                        variance.Add(cost);
-                        transformation.Add(new ExchangeTransformation(originIndex, originRoute, destinationIndex));
-                    }
-                    for (int destinationRoute = originRoute + 1; destinationRoute < routes.Length && (!anxious || variance.Count < 1); destinationRoute++)
-                    {
-                        for (int destinationIndex = 1; destinationIndex < routes[destinationRoute].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
-                        {
-                            int cost =
-                                problem.getDistance(routes[originRoute][originIndex], routes[destinationRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex - 1], routes[destinationRoute][destinationIndex]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex], routes[originRoute][originIndex + 1]) -
-                                (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex], routes[destinationRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[destinationRoute][destinationIndex]));
-                            if (skipPositives && cost >= 0) continue;
-                            variance.Add(cost);
-                            transformation.Add(new ExchangeTransformation(originIndex, originRoute, destinationIndex, destinationRoute));
-                        }
-                    }
-                }
-            }
+            this.type = type;
+            best = 0;
         }
-    }
-
-    /// <summary>
-    /// Represents an intraRoute Exchange local environment
-    /// </summary>
-    internal class ExchangeIntraEnvironment : SolutionEnvironment
-    {
-        /// <summary>
-        /// Difference in cost from the original solution
-        /// </summary>
-        public List<int> variance { get; }
-        /// <summary>
-        /// Transformation needed to change solution
-        /// </summary>
-        public List<SolutionTransformation> transformation { get; }
 
         /// <summary>
         /// Generates an environment in base of a solution
         /// </summary>
         /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public ExchangeIntraEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="anxious">If true, generates only one better solution</param>
+        /// <param name="onlyBest">Whether or not to skip non improvements</param>
+        public void Build(PartialSolution solution, bool anxious, bool onlyBest)
         {
             Problem problem = solution.problem;
             List<int>[] routes = solution.routes;
             variance = new List<int>() { 0 };
             transformation = new List<SolutionTransformation>() { new NoTransformation() };
+            best = 0;
             for (int route = 0; route < routes.Length && (!anxious || variance.Count < 1); route++)
             {
                 for (int originIndex = 1; originIndex < routes[route].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
                 {
-                    for (int destinationIndex = originIndex + 1; destinationIndex < routes[route].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
-                    {
-                        int cost;
-                        if (destinationIndex == originIndex + 1)
-                        {
-                            cost = problem.getDistance(routes[route][originIndex], routes[route][destinationIndex + 1]) +
-                                problem.getDistance(routes[route][originIndex - 1], routes[route][destinationIndex]) +
-                                problem.getDistance(routes[route][destinationIndex], routes[route][originIndex]) -
-                                (problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex]) +
-                                problem.getDistance(routes[route][originIndex], routes[route][destinationIndex]) +
-                                problem.getDistance(routes[route][destinationIndex], routes[route][destinationIndex + 1]));
-                        }
-                        else
-                        {
-                            cost =
-                                problem.getDistance(routes[route][originIndex], routes[route][destinationIndex + 1]) +
-                                problem.getDistance(routes[route][destinationIndex - 1], routes[route][originIndex]) +
-                                problem.getDistance(routes[route][originIndex - 1], routes[route][destinationIndex]) +
-                                problem.getDistance(routes[route][destinationIndex], routes[route][originIndex + 1]) -
-                                (problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex]) +
-                                problem.getDistance(routes[route][originIndex], routes[route][originIndex + 1]) +
-                                problem.getDistance(routes[route][destinationIndex], routes[route][destinationIndex + 1]) +
-                                problem.getDistance(routes[route][destinationIndex - 1], routes[route][destinationIndex]));
-                        }
-                        if (skipPositives && cost >= 0) continue;
-                        variance.Add(cost);
-                        transformation.Add(new ExchangeTransformation(originIndex, route, destinationIndex));
-                    }
+                    if (type == "full" || type == "intra") IntraRoute(anxious, onlyBest, problem, routes, route, originIndex);
+                    if (type == "full" || type == "inter") InterRoute(anxious, onlyBest, problem, routes, route, originIndex);
                 }
             }
         }
-    }
-    
-    /// <summary>
-    /// Represents an interRoute Exchange local environment
-    /// </summary>
-    internal class ExchangeInterEnvironment : SolutionEnvironment
-    {
-        /// <summary>
-        /// Difference in cost from the original solution
-        /// </summary>
-        public List<int> variance { get; }
-        /// <summary>
-        /// Transformation needed to change solution
-        /// </summary>
-        public List<SolutionTransformation> transformation { get; }
 
         /// <summary>
-        /// Generates an environment in base of a solution
+        /// Adds interroute variants
         /// </summary>
-        /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public ExchangeInterEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="anxious"></param>
+        /// <param name="onlyBest"></param>
+        /// <param name="problem"></param>
+        /// <param name="routes"></param>
+        /// <param name="clientLimit"></param>
+        /// <param name="originRoute"></param>
+        /// <param name="originIndex"></param>
+        private void InterRoute(bool anxious, bool onlyBest, Problem problem, List<int>[] routes, int originRoute, int originIndex)
         {
-            Problem problem = solution.problem;
-            List<int>[] routes = solution.routes;
-            variance = new List<int>() { 0 };
-            transformation = new List<SolutionTransformation>() { new NoTransformation() };
-            for (int originRoute = 0; originRoute < routes.Length && (!anxious || variance.Count < 1); originRoute++)
+            for (int destinationRoute = originRoute + 1; destinationRoute < routes.Length && (!anxious || variance.Count < 1); destinationRoute++)
             {
-                for (int originIndex = 1; originIndex < routes[originRoute].Count - 1 && (!anxious || variance.Count < 1); originIndex++)
+                for (int destinationIndex = 1; destinationIndex < routes[destinationRoute].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
                 {
-                    for (int destinationRoute = originRoute + 1; destinationRoute < routes.Length && (!anxious || variance.Count < 1); destinationRoute++)
-                    {
-                        for (int destinationIndex = 1; destinationIndex < routes[destinationRoute].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
-                        {
-                            int cost =
-                                problem.getDistance(routes[originRoute][originIndex], routes[destinationRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex - 1], routes[destinationRoute][destinationIndex]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex], routes[originRoute][originIndex + 1]) -
-                                (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
-                                problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex], routes[destinationRoute][destinationIndex + 1]) +
-                                problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[destinationRoute][destinationIndex]));
-                            if (skipPositives && cost >= 0) continue;
-                            variance.Add(cost);
-                            transformation.Add(new ExchangeTransformation(originIndex, originRoute, destinationIndex, destinationRoute));
-                        }
-                    }
+                    int cost =
+                        problem.getDistance(routes[originRoute][originIndex], routes[destinationRoute][destinationIndex + 1]) +
+                        problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[originRoute][originIndex]) +
+                        problem.getDistance(routes[originRoute][originIndex - 1], routes[destinationRoute][destinationIndex]) +
+                        problem.getDistance(routes[destinationRoute][destinationIndex], routes[originRoute][originIndex + 1]) -
+                        (problem.getDistance(routes[originRoute][originIndex - 1], routes[originRoute][originIndex]) +
+                        problem.getDistance(routes[originRoute][originIndex], routes[originRoute][originIndex + 1]) +
+                        problem.getDistance(routes[destinationRoute][destinationIndex], routes[destinationRoute][destinationIndex + 1]) +
+                        problem.getDistance(routes[destinationRoute][destinationIndex - 1], routes[destinationRoute][destinationIndex]));
+                    if ((anxious || onlyBest) && cost >= 0) continue;
+                    if (variance[best] > cost) best = variance.Count;
+                    variance.Add(cost);
+                    transformation.Add(new ExchangeTransformation(originIndex, originRoute, destinationIndex, destinationRoute));
                 }
+            }
+        }
+
+        /// <summary>
+        /// Adds intraroute variants
+        /// </summary>
+        /// <param name="anxious"></param>
+        /// <param name="onlyBest"></param>
+        /// <param name="problem"></param>
+        /// <param name="routes"></param>
+        /// <param name="route"></param>
+        /// <param name="originIndex"></param>
+        private void IntraRoute(bool anxious, bool onlyBest, Problem problem, List<int>[] routes, int route, int originIndex)
+        {
+            for (int destinationIndex = originIndex + 1; destinationIndex < routes[route].Count - 1 && (!anxious || variance.Count < 1); destinationIndex++)
+            {
+                int cost;
+                if (destinationIndex == originIndex + 1)
+                {
+                    cost = problem.getDistance(routes[route][originIndex], routes[route][destinationIndex + 1]) +
+                        problem.getDistance(routes[route][originIndex - 1], routes[route][destinationIndex]) +
+                        problem.getDistance(routes[route][destinationIndex], routes[route][originIndex]) -
+                        (problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex]) +
+                        problem.getDistance(routes[route][originIndex], routes[route][destinationIndex]) +
+                        problem.getDistance(routes[route][destinationIndex], routes[route][destinationIndex + 1]));
+                }
+                else
+                {
+                    cost =
+                        problem.getDistance(routes[route][originIndex], routes[route][destinationIndex + 1]) +
+                        problem.getDistance(routes[route][destinationIndex - 1], routes[route][originIndex]) +
+                        problem.getDistance(routes[route][originIndex - 1], routes[route][destinationIndex]) +
+                        problem.getDistance(routes[route][destinationIndex], routes[route][originIndex + 1]) -
+                        (problem.getDistance(routes[route][originIndex - 1], routes[route][originIndex]) +
+                        problem.getDistance(routes[route][originIndex], routes[route][originIndex + 1]) +
+                        problem.getDistance(routes[route][destinationIndex], routes[route][destinationIndex + 1]) +
+                        problem.getDistance(routes[route][destinationIndex - 1], routes[route][destinationIndex]));
+                }
+                if ((anxious || onlyBest) && cost >= 0) continue;
+                if (variance[best] > cost) best = variance.Count;
+                variance.Add(cost);
+                transformation.Add(new ExchangeTransformation(originIndex, route, destinationIndex));
             }
         }
     }
@@ -397,23 +300,39 @@ namespace VehicleRouteProblem
         /// <summary>
         /// Difference in cost from the original solution
         /// </summary>
-        public List<int> variance { get; }
+        public List<int> variance { get; private set; }
         /// <summary>
         /// Transformation needed to change solution
         /// </summary>
-        public List<SolutionTransformation> transformation { get; }
+        public List<SolutionTransformation> transformation { get; private set; }
+        /// <summary>
+        /// Index of the best variant
+        /// </summary>
+        public int best { get; private set; }
+
+        /// <summary>
+        /// Sets up an environment
+        /// </summary>
+        public TwoOptEnvironment()
+        {
+            variance = new List<int>() { 0 };
+            transformation = new List<SolutionTransformation>() { new NoTransformation() };
+            best = 0;
+        }
 
         /// <summary>
         /// Generates an environment in base of a solution
         /// </summary>
         /// <param name="solution">Solution</param>
-        /// <param name="skipPositives">Whether or not to skip non improvements</param>
-        public TwoOptEnvironment(PartialSolution solution, bool anxious = false, bool skipPositives = true)
+        /// <param name="anxious">If true, generates only one better solution</param>
+        /// <param name="onlyBest">Whether or not to skip non improvements</param>
+        public void Build(PartialSolution solution, bool anxious, bool onlyBest)
         {
             Problem problem = solution.problem;
             List<int>[] routes = solution.routes;
             variance = new List<int>() { 0 };
             transformation = new List<SolutionTransformation>() { new NoTransformation() };
+            best = 0;
             for (int route = 0; route < routes.Length && (!anxious || variance.Count < 1); route++)
             {
                 for (int startSwap = 1; startSwap < routes[route].Count - 1 && (!anxious || variance.Count < 1); startSwap++)
@@ -429,7 +348,8 @@ namespace VehicleRouteProblem
                             cost += problem.getDistance(routes[route][i + 1], routes[route][i]) -
                                 problem.getDistance(routes[route][i], routes[route][i + 1]);
                         }
-                        if (skipPositives && cost >= 0) continue;
+                        if ((anxious || onlyBest) && cost >= 0) continue;
+                        if (variance[best] > cost) best = variance.Count;
                         variance.Add(cost);
                         transformation.Add(new TwoOptTransformation(route, startSwap, endSwap));
                     }
@@ -437,5 +357,4 @@ namespace VehicleRouteProblem
             }
         }
     }
-
 }
